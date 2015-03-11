@@ -1,0 +1,129 @@
+diff --git a/Uboot/Makefile b/Uboot/Makefile
+index f40744c..614ed79 100644
+--- a/Uboot/Makefile
++++ b/Uboot/Makefile
+@@ -72,7 +72,7 @@ endif
+ endif
+ ifeq ($(ARCH),mips)
+ # CROSS_COMPILE = $(CONFIG_CROSS_COMPILER_PATH)/mips_4KCle-
+-CROSS_COMPILE = $(CONFIG_CROSS_COMPILER_PATH)/mipsel-linux-
++CROSS_COMPILE = $(CONFIG_CROSS_COMPILER_PATH)/mipsel-openwrt-linux-
+ endif
+ ifeq ($(ARCH),nios)
+ CROSS_COMPILE = $(CONFIG_CROSS_COMPILER_PATH)/nios-elf-
+diff --git a/Uboot/cpu/ralink_soc/start.S b/Uboot/cpu/ralink_soc/start.S
+index eadd102..7a63a8b 100644
+--- a/Uboot/cpu/ralink_soc/start.S
++++ b/Uboot/cpu/ralink_soc/start.S
+@@ -1730,8 +1730,9 @@ tRFCinit:
+ 	 */
+ 	bal	1f
+ 	nop
+-        .word	_GLOBAL_OFFSET_TABLE_
++        .word	_gp
+ 1:
++
+ 	lw	gp, 0(ra)
+ #endif
+ 	
+diff --git a/Uboot/drivers/spi_flash.c b/Uboot/drivers/spi_flash.c
+index 7baf61b..ae554d3 100644
+--- a/Uboot/drivers/spi_flash.c
++++ b/Uboot/drivers/spi_flash.c
+@@ -91,6 +91,7 @@
+ #define RD_MODE_QUAD
+ #endif
+ 
++static inline int raspi_write_enable(void);
+ static int raspi_wait_ready(int sleep_ms);
+ static unsigned int spi_wait_nsec = 0;
+ 
+@@ -1281,8 +1282,9 @@ int do_mem_cp(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 		printf("\n Copy linux image[%d byte] to SPI Flash[0x%08X].... \n", count, dest);
+ 	}
+ 	else if (!strncmp(argv[0], "cp.uboot", 9)) {
+-		dest = 0;
+-		printf("\n Copy uboot[%d byte] to SPI Flash[0x%08X].... \n", count, dest);
++		dest = 0;addr=0x80100000;
++count=200000;
++		printf("\n Copy uboot[%d byte] to SPI Flash[0x%08X] from 0x%08X.... \n", count, dest,addr);
+ 	}
+ 	else {
+ 		printf ("Usage:\n%s\n", cmdtp->usage);
+diff --git a/Uboot/lib_mips/board.c b/Uboot/lib_mips/board.c
+index c26c305..370bc4f 100644
+--- a/Uboot/lib_mips/board.c
++++ b/Uboot/lib_mips/board.c
+@@ -1171,7 +1171,7 @@ void board_init_r (gd_t *id, ulong dest_addr)
+ 	bd_t *bd;
+ 	int i;
+ 	int timer1= CONFIG_BOOTDELAY;
+-	unsigned char BootType='3', confirm=0;
++	unsigned char BootType='4', confirm=0;
+ 	int my_tmp;
+ 	char addr_str[11];
+ #if defined (CFG_ENV_IS_IN_FLASH)
+@@ -1376,15 +1376,13 @@ void board_init_r (gd_t *id, ulong dest_addr)
+ 	puts("\n  Do pci configuration  !!\n");
+ 	pci_init();
+ #endif
+-
+ 	/** leave this here (after malloc(), environment and PCI are working) **/
+ 	/* Initialize devices */
+-	devices_init ();
+-
++	//devices_init ();
+ 	jumptable_init ();
+ 
+ 	/* Initialize the console (after the relocation and devices init) */
+-	console_init_r ();
++	//console_init_r ();
+ 
+ 	/* Initialize from environment */
+ 	if ((s = getenv ("loadaddr")) != NULL) {
+@@ -1400,7 +1398,6 @@ void board_init_r (gd_t *id, ulong dest_addr)
+ 	/* miscellaneous platform dependent initialisations */
+ 	misc_init_r ();
+ #endif
+-
+ 	/* RT2880 Boot Loader Menu */
+ #if defined(RT3352_FPGA_BOARD) || defined (RT3352_ASIC_BOARD) || \
+     defined(RT3883_FPGA_BOARD) || defined (RT3883_ASIC_BOARD) || \
+@@ -1741,7 +1738,8 @@ void board_init_r (gd_t *id, ulong dest_addr)
+ 
+ 
+ 	OperationSelect();   
+-
++	BootType=4;
++	//timer1=0;
+ 	while (timer1 > 0) {
+ 		--timer1;
+ 		/* delay 100 * 10ms */
+@@ -1778,6 +1776,27 @@ void board_init_r (gd_t *id, ulong dest_addr)
+ 		eth_initialize(gd->bd);
+ #endif
+ 
++				//protect off uboot
++				//flash_sect_protect(0, CFG_FLASH_BASE, CFG_FLASH_BASE+CFG_BOOTLOADER_SIZE-1);
++
++				//erase uboot
++				printf("\n Erase U-Boot block !!\n");
++							
++				argc = 4;
++				argv[0]= "erase";
++				argv[1]= "uboot";
++				do_flerase(cmdtp, 0, argc, argv);                       
++
++				printf("\n Write U-Boot block !!\n");
++				//cp.uboot            
++				argc = 4;
++				argv[0]= "cp.uboot";
++				do_mem_cp(cmdtp, 0, argc, argv);   
++				printf("\n Reset !!\n");
++				do_reset(cmdtp, 0, argc, argv);                    
++
++
++
+ 		switch(BootType) {
+ 		case '1':
+ 			printf("   \n%d: System Load Linux to SDRAM via TFTP. \n", SEL_LOAD_LINUX_SDRAM);
